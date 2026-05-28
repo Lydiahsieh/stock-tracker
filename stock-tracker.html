@@ -525,7 +525,7 @@
                 <span class="text-gray-400">TWD</span>
               </div>
             </div>
-            <p class="text-xs text-gray-400 mt-2">美股市值換算台幣時使用，請定期手動更新</p>
+            <p class="text-xs text-gray-400 mt-2">點「更新報價」時自動抓取，也可手動修改</p>
           </div>
 
           <!-- 投入計劃 -->
@@ -557,20 +557,41 @@
             </div>
           </div>
 
-          <!-- 持倉代號 -->
+          <!-- 持股管理 -->
           <div class="bg-white rounded-2xl p-4 shadow-sm">
-            <p class="font-semibold text-gray-700 mb-1">持倉代號</p>
-            <p class="text-xs text-gray-400 mb-3">可修改美股 ETF 的代號與名稱</p>
+            <div class="flex items-center justify-between mb-3">
+              <div>
+                <p class="font-semibold text-gray-700">持股管理</p>
+                <p class="text-xs mt-0.5" :class="totalTargetPct === 100 ? 'text-gray-400' : 'text-red-500 font-medium'">
+                  目標配置合計：{{ totalTargetPct }}%
+                  <span v-if="totalTargetPct !== 100">（應為 100%）</span>
+                </p>
+              </div>
+              <button @click="openHoldingModal"
+                      class="text-xs text-blue-600 border border-blue-200 rounded-xl px-3 py-1.5 hover:bg-blue-50 flex-shrink-0">
+                + 新增持股
+              </button>
+            </div>
             <div class="space-y-2">
-              <div v-for="h in holdings" :key="h.id" class="flex items-center gap-2 text-sm">
-                <span class="w-2.5 h-2.5 rounded-full flex-shrink-0" :style="{ background: h.color }"></span>
-                <input type="text" v-model="h.symbol"
-                       class="w-20 border border-gray-200 rounded-lg px-2 py-1 text-sm uppercase focus:outline-none focus:ring-1 focus:ring-blue-400"
-                       @change="saveData" />
-                <input type="text" v-model="h.name"
-                       class="flex-1 border border-gray-200 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
-                       @change="saveData" />
-                <span class="text-xs text-gray-400 w-8 text-right">{{ h.targetPct }}%</span>
+              <div v-for="h in holdings" :key="h.id" class="bg-gray-50 rounded-xl p-3">
+                <div class="flex items-center gap-2">
+                  <span class="w-2.5 h-2.5 rounded-full flex-shrink-0" :style="{ background: h.color }"></span>
+                  <input type="text" v-model="h.symbol"
+                         class="w-16 border border-gray-200 rounded-lg px-2 py-1 text-xs uppercase bg-white focus:outline-none focus:ring-1 focus:ring-blue-400"
+                         @change="saveData" />
+                  <input type="text" v-model="h.name"
+                         class="flex-1 border border-gray-200 rounded-lg px-2 py-1 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-blue-400"
+                         @change="saveData" />
+                  <span class="text-xs text-gray-400 flex-shrink-0">{{ h.market }}</span>
+                  <button @click="removeHolding(h.id)" class="text-red-400 hover:text-red-600 text-xs flex-shrink-0">✕</button>
+                </div>
+                <div class="flex items-center gap-2 mt-2">
+                  <span class="text-xs text-gray-400">目標配置</span>
+                  <input type="number" v-model.number="h.targetPct" min="0" max="100"
+                         class="w-16 border border-gray-200 rounded-lg px-2 py-1 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-blue-400"
+                         @change="saveData" />
+                  <span class="text-xs text-gray-400">%</span>
+                </div>
               </div>
             </div>
           </div>
@@ -730,12 +751,56 @@
       </div>
     </transition>
 
+    <!-- Modal: 新增持股 -->
+    <transition name="modal">
+      <div v-if="showHoldingModal" class="fixed inset-0 z-50 flex items-end">
+        <div class="absolute inset-0 bg-black/40" @click="showHoldingModal = false"></div>
+        <div class="sheet relative bg-white rounded-t-3xl w-full max-w-xl mx-auto p-5 pb-8">
+          <div class="w-10 h-1 bg-gray-200 rounded-full mx-auto mb-4"></div>
+          <h3 class="font-bold text-gray-800 mb-4">新增持股</h3>
+          <div class="space-y-3">
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <label class="text-xs text-gray-500 block mb-1">代號 <span class="text-red-400">*</span></label>
+                <input type="text" v-model="newHolding.symbol" placeholder="如 QQQ、00878"
+                       class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm uppercase focus:outline-none focus:ring-1 focus:ring-blue-400" />
+              </div>
+              <div>
+                <label class="text-xs text-gray-500 block mb-1">市場</label>
+                <div class="flex gap-2 h-[38px]">
+                  <button @click="newHolding.market = 'TW'" class="flex-1 rounded-xl text-sm font-medium transition-colors"
+                          :class="newHolding.market === 'TW' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600'">台股</button>
+                  <button @click="newHolding.market = 'US'" class="flex-1 rounded-xl text-sm font-medium transition-colors"
+                          :class="newHolding.market === 'US' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600'">美股</button>
+                </div>
+              </div>
+            </div>
+            <div>
+              <label class="text-xs text-gray-500 block mb-1">名稱</label>
+              <input type="text" v-model="newHolding.name" placeholder="留空則以代號顯示"
+                     class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400" />
+            </div>
+            <div>
+              <label class="text-xs text-gray-500 block mb-1">目標配置 %</label>
+              <input type="number" v-model.number="newHolding.targetPct" min="0" max="100"
+                     class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400" />
+            </div>
+          </div>
+          <div class="flex gap-3 mt-4">
+            <button @click="showHoldingModal = false" class="flex-1 py-3 border border-gray-200 rounded-2xl text-sm text-gray-600">取消</button>
+            <button @click="addHolding" :disabled="!newHolding.symbol.trim()"
+                    class="flex-1 py-3 bg-blue-600 text-white rounded-2xl text-sm font-medium disabled:opacity-40">新增</button>
+          </div>
+        </div>
+      </div>
+    </transition>
+
   </template>
 </div>
 
 <script>
 const { createApp, ref, reactive, computed, nextTick, onMounted } = Vue
-const COLORS = ['#3B82F6', '#10B981', '#F59E0B']
+const PALETTE = ['#3B82F6','#10B981','#F59E0B','#EF4444','#8B5CF6','#EC4899','#14B8A6','#F97316','#6366F1','#84CC16']
 const LOAN_TOTAL = 1_000_000
 
 // Firebase 設定（已預先填入，對方只需輸入家庭代碼）
@@ -784,18 +849,20 @@ createApp({
     })
 
     const holdings = reactive([
-      { id: 1, symbol: '0050', name: '元大台灣50', market: 'TW', shares: 0, avgCost: 0, currentPrice: 0, targetPct: 45, color: COLORS[0] },
-      { id: 2, symbol: 'VOO',  name: '美股ETF',    market: 'US', shares: 0, avgCost: 0, currentPrice: 0, targetPct: 45, color: COLORS[1] },
-      { id: 3, symbol: 'TSLA', name: 'Tesla',      market: 'US', shares: 0, avgCost: 0, currentPrice: 0, targetPct: 10, color: COLORS[2] }
+      { id: 1, symbol: '0050', name: '元大台灣50', market: 'TW', shares: 0, avgCost: 0, currentPrice: 0, targetPct: 45, color: PALETTE[0] },
+      { id: 2, symbol: 'VOO',  name: '美股ETF',    market: 'US', shares: 0, avgCost: 0, currentPrice: 0, targetPct: 45, color: PALETTE[1] },
+      { id: 3, symbol: 'TSLA', name: 'Tesla',      market: 'US', shares: 0, avgCost: 0, currentPrice: 0, targetPct: 10, color: PALETTE[2] }
     ])
 
     const dividends = ref([])
 
     // Modals
-    const showTx      = ref(false)
-    const showDivModal = ref(false)
+    const showTx          = ref(false)
+    const showDivModal    = ref(false)
+    const showHoldingModal = ref(false)
     const newTx  = reactive({ symbol: '0050', type: 'buy', shares: 0, price: 0, date: todayStr() })
     const newDiv = reactive({ symbol: '0050', amount: 0, date: todayStr(), reinvested: false, sharesAdded: 0 })
+    const newHolding = reactive({ symbol: '', name: '', market: 'US', targetPct: 0 })
 
     // Price fetch
     const isFetchingPrices = ref(false)
@@ -885,6 +952,8 @@ createApp({
       const y = loan.currentMonth / 12
       return y > 0 ? (Math.pow(1 + r, 1 / y) - 1) * 100 : 0
     })
+
+    const totalTargetPct = computed(() => holdings.reduce((s, h) => s + (h.targetPct || 0), 0))
 
     const sortedDividends = computed(() =>
       [...dividends.value].sort((a, b) => new Date(b.date) - new Date(a.date))
@@ -980,9 +1049,10 @@ createApp({
       }
       if (data.settings) Object.assign(settings, data.settings)
       if (data.holdings) {
-        data.holdings.forEach((h, i) => {
-          if (holdings[i]) { Object.assign(holdings[i], h); holdings[i].color = COLORS[i] }
-        })
+        holdings.splice(0, holdings.length, ...data.holdings.map((h, i) => ({
+          ...h,
+          color: PALETTE[i % PALETTE.length]
+        })))
       }
       if (data.dividends) dividends.value = data.dividends
       nextTick(updateChart)
@@ -999,7 +1069,11 @@ createApp({
 
     async function doClear() {
       if (!confirm('確定要清除所有資料嗎？兩個裝置都會清空，此操作無法復原。')) return
-      holdings.forEach(h => { h.shares = 0; h.avgCost = 0; h.currentPrice = 0 })
+      holdings.splice(0, holdings.length,
+        { id: 1, symbol: '0050', name: '元大台灣50', market: 'TW', shares: 0, avgCost: 0, currentPrice: 0, targetPct: 45, color: PALETTE[0] },
+        { id: 2, symbol: 'VOO',  name: '美股ETF',    market: 'US', shares: 0, avgCost: 0, currentPrice: 0, targetPct: 45, color: PALETTE[1] },
+        { id: 3, symbol: 'TSLA', name: 'Tesla',      market: 'US', shares: 0, avgCost: 0, currentPrice: 0, targetPct: 10, color: PALETTE[2] }
+      )
       dividends.value = []
       loan.currentMonth = 1
       loan.rateHistory = [{ fromMonth: 1, annualRatePct: 2.52, annualRate: 0.0252, monthlyPayment: 9436 }]
@@ -1007,44 +1081,62 @@ createApp({
       updateChart()
     }
 
+    function openHoldingModal() {
+      Object.assign(newHolding, { symbol: '', name: '', market: 'US', targetPct: 0 })
+      showHoldingModal.value = true
+    }
+
+    function addHolding() {
+      if (!newHolding.symbol.trim()) return
+      const idx = holdings.length
+      holdings.push({
+        id: Date.now(),
+        symbol: newHolding.symbol.trim().toUpperCase(),
+        name: newHolding.name.trim() || newHolding.symbol.trim().toUpperCase(),
+        market: newHolding.market,
+        shares: 0, avgCost: 0, currentPrice: 0,
+        targetPct: newHolding.targetPct || 0,
+        color: PALETTE[idx % PALETTE.length]
+      })
+      showHoldingModal.value = false
+      saveData()
+      updateChart()
+    }
+
+    function removeHolding(id) {
+      const idx = holdings.findIndex(h => h.id === id)
+      if (idx < 0) return
+      if (holdings.length <= 1) { alert('至少需保留一筆持股'); return }
+      if (holdings[idx].shares > 0 && !confirm(`${holdings[idx].symbol} 仍有持股，確定刪除？`)) return
+      holdings.splice(idx, 1)
+      holdings.forEach((h, i) => { h.color = PALETTE[i % PALETTE.length] })
+      saveData()
+      updateChart()
+    }
+
     // ─── Price fetch ──────────────────────────────────────
     async function fetchPrices() {
       isFetchingPrices.value = true
       priceError.value = ''
-      const errs = []
-
-      // 台股：TWSE
-      for (const h of holdings.filter(h => h.market === 'TW')) {
-        try {
-          const url = `https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch=tse_${h.symbol}.tw&json=1&delay=0`
-          const res  = await fetch(url)
-          const json = await res.json()
-          const info = json.msgArray?.[0]
-          if (info) {
-            const p = parseFloat(info.z !== '-' ? info.z : info.y)
-            if (!isNaN(p) && p > 0) h.currentPrice = p
+      try {
+        const twSyms = holdings.filter(h => h.market === 'TW').map(h => h.symbol + '.TW')
+        const usSyms = holdings.filter(h => h.market === 'US').map(h => h.symbol)
+        const allSyms = [...twSyms, ...usSyms, 'USDTWD=X'].join(',')
+        const url = `https://query1.finance.yahoo.com/v8/finance/quote?symbols=${allSyms}&fields=regularMarketPrice`
+        const res = await fetch(url)
+        const json = await res.json()
+        ;(json.quoteResponse?.result || []).forEach(q => {
+          if (q.symbol === 'USDTWD=X') {
+            if (q.regularMarketPrice) settings.usdTwdRate = parseFloat(q.regularMarketPrice.toFixed(2))
+            return
           }
-        } catch { errs.push(h.symbol + ' 抓取失敗') }
+          const sym = q.symbol.replace(/\.TW$/i, '')
+          const h = holdings.find(h => h.symbol.toUpperCase() === sym.toUpperCase())
+          if (h && q.regularMarketPrice) h.currentPrice = q.regularMarketPrice
+        })
+      } catch {
+        priceError.value = '股價抓取失敗，請確認網路連線或稍後再試'
       }
-
-      // 美股：Yahoo Finance
-      const usHoldings = holdings.filter(h => h.market === 'US')
-      if (usHoldings.length) {
-        try {
-          const syms = usHoldings.map(h => h.symbol).join(',')
-          const url  = `https://query1.finance.yahoo.com/v8/finance/quote?symbols=${syms}&fields=regularMarketPrice`
-          const res  = await fetch(url)
-          const json = await res.json()
-          ;(json.quoteResponse?.result || []).forEach(q => {
-            const h = holdings.find(h => h.symbol.toUpperCase() === q.symbol.toUpperCase())
-            if (h && q.regularMarketPrice) h.currentPrice = q.regularMarketPrice
-          })
-        } catch {
-          errs.push('美股因 CORS 限制無法自動抓取，請手動輸入')
-        }
-      }
-
-      if (errs.length) priceError.value = errs.join('；')
       priceUpdatedAt.value = new Date().toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' })
       await saveData()
       updateChart()
@@ -1132,7 +1224,7 @@ createApp({
         type: 'doughnut',
         data: {
           labels: holdings.map(h => h.symbol),
-          datasets: [{ data: [45, 45, 10], backgroundColor: COLORS, borderWidth: 2, borderColor: '#fff' }]
+          datasets: [{ data: holdings.map(h => h.targetPct), backgroundColor: holdings.map(h => h.color), borderWidth: 2, borderColor: '#fff' }]
         },
         options: {
           plugins: { legend: { display: false }, tooltip: { enabled: false } },
@@ -1144,7 +1236,9 @@ createApp({
     function updateChart() {
       if (!chartInstance) { initChart(); return }
       const vals = holdings.map(h => holdingValue(h))
-      chartInstance.data.datasets[0].data = vals.some(v => v > 0) ? vals : [45, 45, 10]
+      chartInstance.data.labels = holdings.map(h => h.symbol)
+      chartInstance.data.datasets[0].data = vals.some(v => v > 0) ? vals : holdings.map(h => h.targetPct)
+      chartInstance.data.datasets[0].backgroundColor = holdings.map(h => h.color)
       chartInstance.update()
     }
 
@@ -1168,15 +1262,17 @@ createApp({
     return {
       isConnected, setupStep, fbCfg, inputCode, isConnecting, connectErr, syncStatus,
       activeTab, tabs, loan, settings, holdings, dividends,
-      showTx, showDivModal, newTx, newDiv, isFetchingPrices, priceError, priceUpdatedAt,
+      showTx, showDivModal, showHoldingModal, newTx, newDiv, newHolding,
+      isFetchingPrices, priceError, priceUpdatedAt,
       totalValue, totalCost, totalUnrealizedReturn, totalReturnPct,
       totalDividends, totalActualInvested, enrichedHoldings, rebalanceAlerts,
       loanStats, currentRate, netReturn, annualizedReturn, sortedDividends,
-      investmentPlan, txMarket, txEstimate,
+      investmentPlan, txMarket, txEstimate, totalTargetPct,
       formatTWD, holdingValue, holdingReturn, holdingReturnPct, holdingPct,
       goStep2, doConnect, doDisconnect, doClear,
       fetchPrices, addRateEntry, removeRateEntry, syncRateEntry,
       openTx, commitTx, openDiv, commitDiv, delDiv,
+      openHoldingModal, addHolding, removeHolding,
       switchTab, onPriceChange, saveData
     }
   }
