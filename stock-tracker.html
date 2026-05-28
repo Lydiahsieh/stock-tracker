@@ -738,12 +738,23 @@ const { createApp, ref, reactive, computed, nextTick, onMounted } = Vue
 const COLORS = ['#3B82F6', '#10B981', '#F59E0B']
 const LOAN_TOTAL = 1_000_000
 
+// Firebase 設定（已預先填入，對方只需輸入家庭代碼）
+const PRESET_CONFIG = {
+  apiKey:            "AIzaSyDH6a55cAgisg0nI30cEqSPlBXcFxRKcp4",
+  authDomain:        "stock-tracker-7270d.firebaseapp.com",
+  databaseURL:       "https://stock-tracker-7270d-default-rtdb.firebaseio.com",
+  projectId:         "stock-tracker-7270d",
+  storageBucket:     "stock-tracker-7270d.firebasestorage.app",
+  messagingSenderId: "840737353419",
+  appId:             "1:840737353419:web:185276cad6a520fdd9f54e"
+}
+
 createApp({
   setup() {
 
     // ─── Firebase / setup ─────────────────────────────────
     const isConnected  = ref(false)
-    const setupStep    = ref(1)
+    const setupStep    = ref(2)
     const fbCfg        = reactive({ apiKey: '', authDomain: '', databaseURL: '', projectId: '' })
     const inputCode    = ref('')
     const familyCode   = ref('')
@@ -909,12 +920,7 @@ createApp({
       isConnecting.value = true
       connectErr.value = ''
       try {
-        const config = {
-          apiKey:      fbCfg.apiKey,
-          authDomain:  fbCfg.authDomain || fbCfg.projectId + '.firebaseapp.com',
-          databaseURL: fbCfg.databaseURL,
-          projectId:   fbCfg.projectId
-        }
+        const config = PRESET_CONFIG
         if (firebase.apps.length) await firebase.app().delete()
         firebase.initializeApp(config)
         familyCode.value = inputCode.value.trim()
@@ -1144,21 +1150,17 @@ createApp({
 
     // ─── Lifecycle ────────────────────────────────────────
     onMounted(async () => {
-      const savedCfg  = localStorage.getItem('fb-cfg')
       const savedCode = localStorage.getItem('fb-code')
-      if (!savedCfg || !savedCode) return
+      if (!savedCode) return
       try {
-        const config = JSON.parse(savedCfg)
-        Object.assign(fbCfg, config)
-        inputCode.value = savedCode
         if (firebase.apps.length) await firebase.app().delete()
-        firebase.initializeApp(config)
+        firebase.initializeApp(PRESET_CONFIG)
         familyCode.value = savedCode
+        inputCode.value  = savedCode
         await startListening()
         isConnected.value = true
         nextTick(() => { initChart(); updateChart() })
       } catch {
-        localStorage.removeItem('fb-cfg')
         localStorage.removeItem('fb-code')
       }
     })
