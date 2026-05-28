@@ -984,6 +984,16 @@ createApp({
     const totalDividends = computed(() => dividends.value.reduce((s, d) => s + d.amount, 0))
     const totalActualInvested = computed(() => totalCost.value)
 
+    const totalRealizedReturn = computed(() =>
+      transactions.value
+        .filter(tx => tx.type === 'sell' && tx.avgCostAtSell)
+        .reduce((sum, tx) => {
+          const h = holdings.find(h => h.symbol === tx.symbol)
+          const rate = h?.market === 'US' ? settings.usdTwdRate : 1
+          return sum + (tx.price - tx.avgCostAtSell) * tx.shares * rate
+        }, 0)
+    )
+
     const enrichedHoldings = computed(() =>
       holdings.map(h => ({ ...h, value: holdingValue(h), pct: holdingPct(h) }))
     )
@@ -1028,12 +1038,12 @@ createApp({
     const currentRate = computed(() => getRateEntry(loan.currentMonth || 1).annualRate)
 
     const netReturn = computed(() =>
-      totalUnrealizedReturn.value + totalDividends.value - loanStats.value.totalInterestPaid
+      totalUnrealizedReturn.value + totalRealizedReturn.value + totalDividends.value - loanStats.value.totalInterestPaid
     )
 
     const annualizedReturn = computed(() => {
       if (totalCost.value <= 0 || loan.currentMonth <= 0) return 0
-      const r = (totalUnrealizedReturn.value + totalDividends.value) / totalCost.value
+      const r = (totalUnrealizedReturn.value + totalRealizedReturn.value + totalDividends.value) / totalCost.value
       const y = loan.currentMonth / 12
       return y > 0 ? (Math.pow(1 + r, 1 / y) - 1) * 100 : 0
     })
@@ -1382,7 +1392,7 @@ createApp({
       activeTab, tabs, loan, settings, holdings, dividends, transactions,
       showTx, showDivModal, showHoldingModal, newTx, newDiv, newHolding,
       isFetchingPrices, priceError, priceUpdatedAt,
-      totalValue, totalCost, totalUnrealizedReturn, totalReturnPct,
+      totalValue, totalCost, totalUnrealizedReturn, totalRealizedReturn, totalReturnPct,
       totalDividends, totalActualInvested, enrichedHoldings, rebalanceAlerts,
       loanStats, currentRate, netReturn, annualizedReturn, sortedDividends, rebalancePlan,
       investmentPlan, txMarket, txEstimate, totalTargetPct, transactionsBySymbol, holdingTotalPnL,
