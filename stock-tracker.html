@@ -214,7 +214,24 @@
             <p class="text-xl font-bold" :class="netReturn >= 0 ? 'text-green-600' : 'text-red-500'">
               {{ formatTWD(netReturn) }}
             </p>
-            <p class="text-xs text-gray-400 mt-1">報酬 − 利息成本</p>
+            <div class="mt-2 pt-2 border-t border-gray-50 space-y-0.5">
+              <div class="flex justify-between text-xs text-gray-400">
+                <span>浮動損益</span>
+                <span :class="totalUnrealizedReturn >= 0 ? 'text-green-500' : 'text-red-400'">{{ totalUnrealizedReturn >= 0 ? '+' : '' }}{{ formatTWD(totalUnrealizedReturn) }}</span>
+              </div>
+              <div v-if="totalRealizedReturn !== 0" class="flex justify-between text-xs text-gray-400">
+                <span>已實現損益</span>
+                <span :class="totalRealizedReturn >= 0 ? 'text-green-500' : 'text-red-400'">{{ totalRealizedReturn >= 0 ? '+' : '' }}{{ formatTWD(totalRealizedReturn) }}</span>
+              </div>
+              <div v-if="totalDividends > 0" class="flex justify-between text-xs text-gray-400">
+                <span>股息收入</span>
+                <span class="text-green-500">+{{ formatTWD(totalDividends) }}</span>
+              </div>
+              <div class="flex justify-between text-xs text-gray-400">
+                <span>貸款利息</span>
+                <span class="text-red-400">-{{ formatTWD(loanStats.totalInterestPaid) }}</span>
+              </div>
+            </div>
           </div>
         </div>
 
