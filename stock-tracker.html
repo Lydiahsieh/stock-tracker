@@ -315,29 +315,7 @@
 
       <!-- ══════ 持倉 ══════ -->
       <div v-show="activeTab === 'holdings'">
-        <!-- 標題列 -->
-        <div class="flex items-center justify-between mb-3">
-          <div>
-            <p class="text-xs text-gray-400">{{ priceUpdatedAt ? '股價更新：' + priceUpdatedAt : '手動輸入或點右側自動抓取' }}</p>
-            <p class="text-xs mt-0.5" :class="totalTargetPct === 100 ? 'text-gray-400' : 'text-red-500 font-medium'">
-              目標配置合計：{{ totalTargetPct }}%<span v-if="totalTargetPct !== 100">（應為 100%）</span>
-            </p>
-          </div>
-          <div class="flex gap-2">
-            <button @click="openHoldingModal"
-                    class="flex items-center gap-1 bg-white border border-gray-200 rounded-xl px-3 py-1.5 text-xs text-gray-600 shadow-sm hover:bg-gray-50 transition-colors">
-              ＋ 新增標的
-            </button>
-            <button @click="fetchPrices" :disabled="isFetchingPrices"
-                    class="flex items-center gap-1.5 bg-white border border-gray-200 rounded-xl px-3 py-1.5 text-xs text-gray-600 shadow-sm hover:bg-gray-50 disabled:opacity-50 transition-colors">
-              <span :class="isFetchingPrices ? 'animate-spin inline-block' : ''">🔄</span>
-              {{ isFetchingPrices ? '更新中…' : '更新股價' }}
-            </button>
-          </div>
-        </div>
-        <div v-if="priceError" class="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-xl p-2.5 mb-3">
-          {{ priceError }}
-        </div>
+        <p class="text-xs text-gray-400 mb-3">手動輸入各標的現價，數字會同步更新總覽與再平衡提示</p>
 
         <div class="space-y-3">
           <div v-for="h in holdings" :key="h.id" class="bg-white rounded-2xl shadow-sm overflow-hidden">
@@ -351,25 +329,14 @@
                   <p class="text-xs text-gray-400">{{ h.name }} · {{ h.market === 'TW' ? '台股' : '美股' }}</p>
                 </div>
               </div>
-              <div class="flex items-center gap-2">
-                <div class="text-right">
-                  <p class="text-xs text-gray-400">目標配置</p>
-                  <div class="flex items-center gap-1 justify-end">
-                    <input type="number" v-model.number="h.targetPct" min="0" max="100"
-                           class="w-12 border border-gray-200 rounded-lg px-1.5 py-0.5 text-xs text-center focus:outline-none focus:ring-1 focus:ring-blue-400"
-                           @change="saveData" />
-                    <span class="text-xs text-gray-400">%</span>
-                  </div>
-                </div>
-                <button @click="removeHolding(h.id)" class="text-gray-300 hover:text-red-500 text-sm ml-1 transition-colors" title="刪除">✕</button>
-              </div>
+              <span class="text-xs text-gray-400">目標 {{ h.targetPct }}%</span>
             </div>
 
             <!-- 即時行情區 -->
             <div class="mx-4 mb-3 bg-gray-50 rounded-xl p-3">
               <div class="flex items-center justify-between">
                 <div>
-                  <p class="text-xs text-gray-400 mb-0.5">即時行情（影響總覽與配置）</p>
+                  <p class="text-xs text-gray-400 mb-0.5">現價（影響總覽與配置）</p>
                   <div class="flex items-center gap-1.5">
                     <span class="text-xs text-gray-400">{{ h.market === 'US' ? 'USD $' : 'NT$' }}</span>
                     <input type="number" v-model.number="h.currentPrice" min="0" step="0.01"
@@ -592,6 +559,40 @@
             </div>
           </div>
 
+
+          <!-- 持股與配置 -->
+          <div class="bg-white rounded-2xl p-4 shadow-sm">
+            <div class="flex items-center justify-between mb-3">
+              <div>
+                <p class="font-semibold text-gray-700">持股與配置</p>
+                <p class="text-xs mt-0.5" :class="totalTargetPct === 100 ? 'text-gray-400' : 'text-red-500 font-medium'">
+                  目標合計：{{ totalTargetPct }}%<span v-if="totalTargetPct !== 100">（應為 100%）</span>
+                </p>
+              </div>
+              <button @click="openHoldingModal"
+                      class="text-xs text-blue-600 border border-blue-200 rounded-xl px-3 py-1.5 hover:bg-blue-50 flex-shrink-0">
+                + 新增標的
+              </button>
+            </div>
+            <div class="space-y-2">
+              <div v-for="h in holdings" :key="h.id" class="bg-gray-50 rounded-xl p-3">
+                <div class="flex items-center gap-2">
+                  <span class="w-2.5 h-2.5 rounded-full flex-shrink-0" :style="{ background: h.color }"></span>
+                  <div class="flex-1 min-w-0">
+                    <p class="text-sm font-medium text-gray-800">{{ h.symbol }} <span class="text-xs text-gray-400 font-normal">{{ h.name }}</span></p>
+                    <p class="text-xs text-gray-400">{{ h.market === 'TW' ? '台股' : '美股' }}</p>
+                  </div>
+                  <div class="flex items-center gap-1.5">
+                    <input type="number" v-model.number="h.targetPct" min="0" max="100"
+                           class="w-14 border border-gray-200 rounded-lg px-2 py-1 text-xs text-center bg-white focus:outline-none focus:ring-1 focus:ring-blue-400"
+                           @change="saveData" />
+                    <span class="text-xs text-gray-400">%</span>
+                    <button @click="removeHolding(h.id)" class="text-gray-300 hover:text-red-500 text-xs ml-1 transition-colors">✕</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
 
           <!-- 帳號資訊 -->
           <div class="bg-white rounded-2xl p-4 shadow-sm">
