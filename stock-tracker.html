@@ -403,21 +403,21 @@
         <div v-else class="space-y-5">
           <template v-for="h in holdings" :key="h.id">
             <div v-if="transactionsBySymbol[h.symbol]?.length">
-              <!-- 個股標題 + 總損益 -->
+              <!-- 個股標題 + 未實現損益 -->
               <div class="flex items-center justify-between mb-2 px-1">
                 <div class="flex items-center gap-2">
                   <span class="w-2.5 h-2.5 rounded-full flex-shrink-0" :style="{ background: h.color }"></span>
                   <p class="font-semibold text-gray-700">{{ h.symbol }}</p>
                   <span class="text-xs text-gray-400">{{ h.name }}</span>
                 </div>
-                <div class="text-right" v-if="holdingTotalPnL(h).hasPrice">
+                <div class="text-right" v-if="h.currentPrice && h.shares > 0">
                   <p class="text-sm font-bold"
-                     :class="holdingTotalPnL(h).total >= 0 ? 'text-green-600' : 'text-red-500'">
-                    {{ holdingTotalPnL(h).total >= 0 ? '+' : '' }}{{ formatTWD(holdingTotalPnL(h).total) }}
+                     :class="holdingReturn(h) >= 0 ? 'text-green-600' : 'text-red-500'">
+                    {{ holdingReturn(h) >= 0 ? '+' : '' }}{{ formatTWD(holdingReturn(h)) }}
                   </p>
                   <p class="text-xs"
-                     :class="holdingTotalPnL(h).pct >= 0 ? 'text-green-500' : 'text-red-400'">
-                    {{ holdingTotalPnL(h).pct >= 0 ? '+' : '' }}{{ holdingTotalPnL(h).pct.toFixed(2) }}%
+                     :class="holdingReturnPct(h) >= 0 ? 'text-green-500' : 'text-red-400'">
+                    {{ holdingReturnPct(h) >= 0 ? '+' : '' }}{{ holdingReturnPct(h).toFixed(2) }}%
                   </p>
                 </div>
               </div>
@@ -433,10 +433,19 @@
                       </span>
                       <span class="text-xs text-gray-400">{{ tx.date }}</span>
                     </div>
-                    <p class="text-sm text-gray-600">
-                      {{ tx.shares.toLocaleString() }} 股
-                      <span class="text-gray-400">@ {{ h.market === 'US' ? '$' : 'NT$' }}{{ tx.price.toFixed(2) }}</span>
-                    </p>
+                    <div class="text-right">
+                      <p class="text-sm text-gray-600">
+                        {{ tx.shares.toLocaleString() }} 股
+                        <span class="text-gray-400">@ {{ h.market === 'US' ? '$' : 'NT$' }}{{ tx.price.toFixed(2) }}</span>
+                      </p>
+                      <template v-if="tx.type === 'sell' && tx.avgCostAtSell">
+                        <p class="text-xs mt-0.5"
+                           :class="(tx.price - tx.avgCostAtSell) >= 0 ? 'text-green-500' : 'text-red-400'">
+                          已實現
+                          {{ (tx.price - tx.avgCostAtSell) >= 0 ? '+' : '' }}{{ formatTWD((tx.price - tx.avgCostAtSell) * tx.shares * (h.market === 'US' ? settings.usdTwdRate : 1)) }}
+                        </p>
+                      </template>
+                    </div>
                   </div>
                 </div>
               </div>
