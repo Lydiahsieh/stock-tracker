@@ -1,0 +1,1184 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>股票配置追蹤器</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-database-compat.js"></script>
+  <style>
+    [v-cloak] { display: none; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+    .modal-enter-active, .modal-leave-active { transition: opacity 0.2s; }
+    .modal-enter-from, .modal-leave-to { opacity: 0; }
+    .modal-enter-active .sheet, .modal-leave-active .sheet { transition: transform 0.25s ease; }
+    .modal-enter-from .sheet, .modal-leave-to .sheet { transform: translateY(100%); }
+  </style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+<div id="app" v-cloak>
+
+  <!-- ═══════════════════════════════════════════════
+       SETUP SCREEN
+  ═══════════════════════════════════════════════ -->
+  <div v-if="!isConnected"
+       class="min-h-screen flex flex-col items-center justify-center p-4 bg-gradient-to-b from-blue-50 to-gray-50">
+    <div class="w-full max-w-sm">
+
+      <!-- Logo -->
+      <div class="text-center mb-8">
+        <p class="text-6xl mb-3">📊</p>
+        <h1 class="text-2xl font-bold text-gray-800">股票配置追蹤器</h1>
+        <p class="text-sm text-gray-400 mt-1">兩人共用 · 即時同步</p>
+      </div>
+
+      <div class="bg-white rounded-3xl p-6 shadow-md">
+        <!-- Step indicator -->
+        <div class="flex items-center gap-2 mb-6">
+          <div class="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold transition-colors"
+               :class="setupStep >= 1 ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-400'">1</div>
+          <div class="flex-1 h-0.5 rounded transition-colors" :class="setupStep >= 2 ? 'bg-blue-600' : 'bg-gray-200'"></div>
+          <div class="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold transition-colors"
+               :class="setupStep >= 2 ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-400'">2</div>
+        </div>
+
+        <!-- Step 1: Firebase config -->
+        <template v-if="setupStep === 1">
+          <h2 class="font-bold text-gray-800 mb-1">設定 Firebase 資料庫</h2>
+          <p class="text-xs text-gray-500 mb-3">讓兩台裝置的資料即時同步</p>
+
+          <div class="bg-blue-50 rounded-2xl p-3 mb-4 text-xs text-blue-800 space-y-0.5 leading-5">
+            <p class="font-semibold">📋 取得設定碼的步驟：</p>
+            <p>① 前往 <strong>console.firebase.google.com</strong>（Google 帳號登入）</p>
+            <p>② 建立新專案 → 左側 Build → <strong>Realtime Database</strong></p>
+            <p>③ 建立資料庫 → 選「<strong>測試模式</strong>」→ 完成</p>
+            <p>④ 回到專案設定 → 新增網頁應用程式 → 複製 <code class="bg-blue-100 rounded px-1">firebaseConfig</code> 各欄位填入下方</p>
+          </div>
+
+          <div class="space-y-2.5">
+            <div>
+              <label class="text-xs text-gray-500 block mb-1">API Key <span class="text-red-400">*</span></label>
+              <input v-model="fbCfg.apiKey" type="text" placeholder="AIzaSy..."
+                     class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400" />
+            </div>
+            <div>
+              <label class="text-xs text-gray-500 block mb-1">Database URL <span class="text-red-400">*</span></label>
+              <input v-model="fbCfg.databaseURL" type="text" placeholder="https://xxx-default-rtdb.firebaseio.com"
+                     class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400" />
+            </div>
+            <div>
+              <label class="text-xs text-gray-500 block mb-1">Project ID</label>
+              <input v-model="fbCfg.projectId" type="text" placeholder="your-project-id"
+                     class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400" />
+            </div>
+            <div>
+              <label class="text-xs text-gray-500 block mb-1">Auth Domain</label>
+              <input v-model="fbCfg.authDomain" type="text" placeholder="your-project.firebaseapp.com"
+                     class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400" />
+            </div>
+          </div>
+
+          <button @click="goStep2" :disabled="!fbCfg.apiKey || !fbCfg.databaseURL"
+                  class="mt-4 w-full bg-blue-600 text-white rounded-2xl py-3 text-sm font-medium disabled:opacity-40 hover:bg-blue-700 transition-colors">
+            下一步
+          </button>
+        </template>
+
+        <!-- Step 2: Family code -->
+        <template v-if="setupStep === 2">
+          <h2 class="font-bold text-gray-800 mb-1">設定家庭代碼</h2>
+          <p class="text-xs text-gray-500 mb-3">兩人輸入相同的代碼，就能共用同一份資料</p>
+
+          <div class="bg-amber-50 rounded-2xl p-3 mb-4 text-xs text-amber-800">
+            💡 代碼就是你們的「密碼」，建議用英文加數字，例如：<strong>jia-ming-2025</strong>
+          </div>
+
+          <div>
+            <label class="text-xs text-gray-500 block mb-1">家庭代碼</label>
+            <input v-model="inputCode" type="text" placeholder="設定一組獨特的代碼"
+                   class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
+                   @keyup.enter="doConnect" />
+          </div>
+          <p v-if="connectErr" class="text-xs text-red-500 mt-2">{{ connectErr }}</p>
+
+          <div class="flex gap-2 mt-4">
+            <button @click="setupStep = 1"
+                    class="flex-1 border border-gray-200 rounded-2xl py-3 text-sm text-gray-600 hover:bg-gray-50">
+              上一步
+            </button>
+            <button @click="doConnect" :disabled="!inputCode.trim() || isConnecting"
+                    class="flex-1 bg-blue-600 text-white rounded-2xl py-3 text-sm font-medium disabled:opacity-40 hover:bg-blue-700">
+              {{ isConnecting ? '連線中…' : '開始使用' }}
+            </button>
+          </div>
+        </template>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════
+       MAIN APP
+  ═══════════════════════════════════════════════ -->
+  <template v-else>
+
+    <!-- Header -->
+    <header class="bg-white border-b border-gray-100 sticky top-0 z-20">
+      <div class="max-w-xl mx-auto px-4 py-3 flex items-center justify-between">
+        <h1 class="text-base font-bold text-gray-800">📊 股票追蹤器</h1>
+        <div class="flex items-center gap-1.5">
+          <span class="w-2 h-2 rounded-full transition-colors"
+                :class="{
+                  'bg-green-400': syncStatus === 'synced',
+                  'bg-yellow-400 animate-pulse': syncStatus === 'syncing',
+                  'bg-red-400': syncStatus === 'offline'
+                }"></span>
+          <span class="text-xs text-gray-400">
+            {{ syncStatus === 'synced' ? '已同步' : syncStatus === 'syncing' ? '同步中' : '離線' }}
+          </span>
+        </div>
+      </div>
+    </header>
+
+    <main class="max-w-xl mx-auto px-4 pt-4 pb-24">
+
+      <!-- ══════ 儀表板 ══════ -->
+      <div v-show="activeTab === 'dashboard'">
+
+        <!-- 再平衡警示 -->
+        <template v-if="totalValue > 0">
+          <div v-if="rebalanceAlerts.length === 0"
+               class="mb-3 bg-green-50 border border-green-200 rounded-2xl p-3 flex items-center gap-2">
+            <span class="text-green-500">✅</span>
+            <p class="text-sm text-green-700 font-medium">配置均衡，目前比例符合目標</p>
+          </div>
+          <div v-for="alert in rebalanceAlerts" :key="alert.id" class="mb-3 border rounded-2xl p-4"
+               :class="alert.diff > 0 ? 'bg-orange-50 border-orange-200' : 'bg-sky-50 border-sky-200'">
+            <div class="flex items-start gap-3">
+              <span class="text-xl mt-0.5">⚠️</span>
+              <div class="flex-1">
+                <p class="font-semibold text-gray-800 text-sm">
+                  {{ alert.symbol }}
+                  <span :class="alert.diff > 0 ? 'text-orange-600' : 'text-sky-600'">
+                    {{ alert.diff > 0 ? '比例偏高，建議減碼' : '比例偏低，建議加碼' }}
+                  </span>
+                </p>
+                <p class="text-xs text-gray-500 mt-0.5">
+                  目前 <strong>{{ alert.pct.toFixed(1) }}%</strong>，目標 {{ alert.targetPct }}%，偏差 {{ Math.abs(alert.diff).toFixed(1) }}%
+                </p>
+                <p class="text-sm font-medium mt-1.5"
+                   :class="alert.diff > 0 ? 'text-orange-700' : 'text-sky-700'">
+                  {{ alert.diff > 0 ? '賣出' : '買入' }} 約 {{ formatTWD(Math.abs(alert.adjustAmount)) }}
+                </p>
+              </div>
+            </div>
+          </div>
+        </template>
+
+        <!-- 總市值 -->
+        <div class="bg-gradient-to-br from-blue-600 to-indigo-700 rounded-2xl p-5 text-white mb-3">
+          <p class="text-blue-200 text-xs mb-1">總持倉市值</p>
+          <p class="text-3xl font-bold tracking-tight">{{ totalValue > 0 ? formatTWD(totalValue) : '— —' }}</p>
+          <div v-if="totalCost > 0" class="flex items-center mt-2">
+            <span class="text-sm font-medium"
+                  :class="totalUnrealizedReturn >= 0 ? 'text-green-300' : 'text-red-300'">
+              {{ totalUnrealizedReturn >= 0 ? '▲' : '▼' }}
+              {{ formatTWD(Math.abs(totalUnrealizedReturn)) }}
+              （{{ totalReturnPct >= 0 ? '+' : '' }}{{ totalReturnPct.toFixed(2) }}%）
+            </span>
+          </div>
+          <p v-else class="text-blue-300 text-xs mt-2">請先到「持倉」頁面新增交易記錄</p>
+        </div>
+
+        <!-- 統計卡片 row -->
+        <div class="grid grid-cols-2 gap-3 mb-3">
+          <div class="bg-white rounded-2xl p-4 shadow-sm">
+            <p class="text-xs text-gray-400 mb-1">累計貸款利息</p>
+            <p class="text-xl font-bold text-red-500">{{ formatTWD(loanStats.totalInterestPaid) }}</p>
+            <p class="text-xs text-gray-400 mt-1">第 {{ loan.currentMonth }} / 120 期</p>
+          </div>
+          <div class="bg-white rounded-2xl p-4 shadow-sm">
+            <p class="text-xs text-gray-400 mb-1">扣息後淨報酬</p>
+            <p class="text-xl font-bold" :class="netReturn >= 0 ? 'text-green-600' : 'text-red-500'">
+              {{ formatTWD(netReturn) }}
+            </p>
+            <p class="text-xs text-gray-400 mt-1">報酬 − 利息成本</p>
+          </div>
+        </div>
+
+        <!-- 跑贏貸款利率 -->
+        <div class="rounded-2xl p-4 mb-3 border"
+             :class="annualizedReturn >= currentRate * 100 ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'">
+          <div class="flex justify-between items-center">
+            <div>
+              <p class="text-sm font-semibold text-gray-800">
+                {{ annualizedReturn >= currentRate * 100 ? '✅ 已跑贏貸款利率' : '❌ 尚未跑贏貸款利率' }}
+              </p>
+              <p class="text-xs text-gray-500 mt-0.5">目標：年化報酬 ≥ {{ (currentRate * 100).toFixed(2) }}%</p>
+            </div>
+            <div class="text-right">
+              <p class="text-2xl font-bold"
+                 :class="annualizedReturn >= currentRate * 100 ? 'text-green-600' : 'text-red-500'">
+                {{ loan.currentMonth > 0 && totalCost > 0 ? annualizedReturn.toFixed(2) + '%' : '—' }}
+              </p>
+              <p class="text-xs text-gray-400">年化報酬</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- 3 個月投入進度 -->
+        <div class="bg-white rounded-2xl p-4 shadow-sm mb-3">
+          <div class="flex items-center justify-between mb-3">
+            <p class="font-semibold text-gray-700 text-sm">3 個月投入進度</p>
+            <p class="text-xs text-gray-400">計劃總額 {{ formatTWD(settings.totalPlanned) }}</p>
+          </div>
+          <!-- 整體進度 -->
+          <div class="mb-3">
+            <div class="flex justify-between text-xs text-gray-500 mb-1">
+              <span>整體</span>
+              <span>
+                {{ formatTWD(totalActualInvested) }} / {{ formatTWD(settings.totalPlanned) }}
+                <span class="text-gray-400 ml-0.5">
+                  （{{ settings.totalPlanned > 0 ? Math.min(totalActualInvested / settings.totalPlanned * 100, 100).toFixed(0) : 0 }}%）
+                </span>
+              </span>
+            </div>
+            <div class="w-full bg-gray-100 rounded-full h-2">
+              <div class="bg-indigo-500 h-2 rounded-full transition-all"
+                   :style="{ width: Math.min(totalActualInvested / settings.totalPlanned * 100, 100) + '%' }"></div>
+            </div>
+          </div>
+          <!-- 各標的 -->
+          <div v-for="p in investmentPlan" :key="p.id" class="mb-3">
+            <div class="flex items-center justify-between text-xs mb-1">
+              <div class="flex items-center gap-1.5">
+                <span class="w-2 h-2 rounded-full flex-shrink-0" :style="{ background: p.color }"></span>
+                <span class="font-medium text-gray-700">{{ p.symbol }}</span>
+                <span class="text-gray-400">目標 {{ formatTWD(p.planned) }}</span>
+              </div>
+              <span v-if="p.remaining > 0" class="text-amber-600 font-medium">還差 {{ formatTWD(p.remaining) }}</span>
+              <span v-else class="text-green-600 font-medium">✓ 達標</span>
+            </div>
+            <div class="w-full bg-gray-100 rounded-full h-1.5">
+              <div class="h-1.5 rounded-full transition-all"
+                   :style="{ width: p.planPct + '%', background: p.color }"></div>
+            </div>
+            <p class="text-xs text-gray-400 mt-0.5">已投入 {{ formatTWD(p.actual) }}</p>
+          </div>
+        </div>
+
+        <!-- 配置圓餅圖 -->
+        <div class="bg-white rounded-2xl p-4 shadow-sm mb-3">
+          <div class="flex items-center justify-between mb-3">
+            <p class="font-semibold text-gray-700 text-sm">配置比例</p>
+            <p class="text-xs text-gray-400">警示閾值 ±{{ settings.rebalanceThreshold }}%</p>
+          </div>
+          <div class="flex items-center gap-4">
+            <div class="w-28 h-28 flex-shrink-0">
+              <canvas id="pieChart"></canvas>
+            </div>
+            <div class="flex-1 space-y-2">
+              <div v-for="h in enrichedHoldings" :key="h.id">
+                <div class="flex items-center justify-between text-xs">
+                  <div class="flex items-center gap-1.5">
+                    <span class="w-2.5 h-2.5 rounded-full flex-shrink-0" :style="{ background: h.color }"></span>
+                    <span class="font-medium text-gray-700">{{ h.symbol }}</span>
+                  </div>
+                  <div>
+                    <span class="font-semibold"
+                          :class="totalValue > 0 && Math.abs(h.pct - h.targetPct) > settings.rebalanceThreshold
+                                  ? 'text-orange-600' : 'text-gray-700'">
+                      {{ totalValue > 0 ? h.pct.toFixed(1) + '%' : '—' }}
+                    </span>
+                    <span class="text-gray-400 ml-1">目標 {{ h.targetPct }}%</span>
+                  </div>
+                </div>
+                <div class="w-full bg-gray-100 rounded-full h-1 mt-0.5">
+                  <div class="h-1 rounded-full transition-all"
+                       :style="{ width: (totalValue > 0 ? Math.min(h.pct, 100) : h.targetPct) + '%' }"
+                       :class="totalValue > 0 && Math.abs(h.pct - h.targetPct) > settings.rebalanceThreshold
+                               ? 'bg-orange-400' : 'bg-blue-400'"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 股息小卡 -->
+        <div v-if="totalDividends > 0" class="bg-white rounded-2xl p-4 shadow-sm">
+          <p class="text-xs text-gray-400 mb-1">累計股息收入</p>
+          <p class="text-xl font-bold text-green-600">{{ formatTWD(totalDividends) }}</p>
+        </div>
+      </div>
+
+      <!-- ══════ 持倉 ══════ -->
+      <div v-show="activeTab === 'holdings'">
+        <!-- 更新股價列 -->
+        <div class="flex items-center justify-between mb-3">
+          <p class="text-xs text-gray-400">
+            {{ priceUpdatedAt ? '股價更新：' + priceUpdatedAt : '手動輸入或點右側自動抓取' }}
+          </p>
+          <button @click="fetchPrices" :disabled="isFetchingPrices"
+                  class="flex items-center gap-1.5 bg-white border border-gray-200 rounded-xl px-3 py-1.5 text-xs text-gray-600 shadow-sm hover:bg-gray-50 disabled:opacity-50 transition-colors">
+            <span :class="isFetchingPrices ? 'animate-spin inline-block' : ''">🔄</span>
+            {{ isFetchingPrices ? '更新中…' : '更新股價' }}
+          </button>
+        </div>
+        <div v-if="priceError" class="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-xl p-2.5 mb-3">
+          {{ priceError }}
+        </div>
+
+        <div class="space-y-3">
+          <div v-for="h in holdings" :key="h.id" class="bg-white rounded-2xl p-4 shadow-sm">
+            <div class="flex items-start justify-between mb-3">
+              <div>
+                <p class="font-bold text-gray-800">{{ h.symbol }}</p>
+                <p class="text-xs text-gray-400">{{ h.name }} · {{ h.market === 'TW' ? '台股' : '美股（USD）' }}</p>
+              </div>
+              <span class="text-xs px-2 py-1 rounded-full font-medium"
+                    :class="totalValue > 0 && Math.abs(holdingPct(h) - h.targetPct) > settings.rebalanceThreshold
+                            ? 'bg-orange-100 text-orange-700' : 'bg-gray-100 text-gray-500'">
+                {{ totalValue > 0 ? holdingPct(h).toFixed(1) + '%' : '—' }}
+              </span>
+            </div>
+
+            <div class="grid grid-cols-2 gap-x-4 gap-y-2 text-sm mb-3">
+              <div>
+                <p class="text-xs text-gray-400">持股數量</p>
+                <p class="font-medium">{{ h.shares > 0 ? h.shares.toLocaleString() + ' 股' : '—' }}</p>
+              </div>
+              <div>
+                <p class="text-xs text-gray-400">市值（台幣）</p>
+                <p class="font-medium">{{ h.shares > 0 && h.currentPrice > 0 ? formatTWD(holdingValue(h)) : '—' }}</p>
+              </div>
+              <div>
+                <p class="text-xs text-gray-400">均價（{{ h.market === 'US' ? 'USD' : 'NT$' }}）</p>
+                <p class="font-medium">{{ h.avgCost > 0 ? (h.market === 'US' ? '$' : 'NT$') + h.avgCost.toFixed(2) : '—' }}</p>
+              </div>
+              <div>
+                <p class="text-xs text-gray-400">現價</p>
+                <div class="flex items-center gap-1">
+                  <span class="text-gray-400 text-xs">{{ h.market === 'US' ? '$' : 'NT$' }}</span>
+                  <input type="number" v-model.number="h.currentPrice" min="0" step="0.01"
+                         class="w-24 border border-gray-200 rounded-lg px-2 py-0.5 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
+                         placeholder="0.00" @change="onPriceChange" />
+                </div>
+              </div>
+            </div>
+
+            <div v-if="h.shares > 0 && h.avgCost > 0 && h.currentPrice > 0"
+                 class="rounded-xl p-2.5 flex justify-between items-center mb-2"
+                 :class="holdingReturn(h) >= 0 ? 'bg-green-50' : 'bg-red-50'">
+              <span class="text-xs text-gray-500">未實現損益</span>
+              <span class="text-sm font-bold" :class="holdingReturn(h) >= 0 ? 'text-green-600' : 'text-red-500'">
+                {{ holdingReturn(h) >= 0 ? '+' : '' }}{{ formatTWD(holdingReturn(h)) }}
+                （{{ holdingReturn(h) >= 0 ? '+' : '' }}{{ holdingReturnPct(h).toFixed(2) }}%）
+              </span>
+            </div>
+
+            <button @click="openTx(h.symbol)"
+                    class="w-full text-xs text-blue-600 border border-blue-200 rounded-xl py-2 hover:bg-blue-50 transition-colors">
+              + 新增買入 / 賣出記錄
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ══════ 股息 ══════ -->
+      <div v-show="activeTab === 'dividends'">
+        <div class="bg-white rounded-2xl p-4 shadow-sm mb-4 flex justify-between items-center">
+          <div>
+            <p class="text-xs text-gray-400">累計股息收入</p>
+            <p class="text-2xl font-bold text-green-600">{{ formatTWD(totalDividends) }}</p>
+            <p class="text-xs text-gray-400 mt-0.5">共 {{ dividends.length }} 筆</p>
+          </div>
+          <button @click="openDiv"
+                  class="bg-green-600 text-white text-sm px-4 py-2 rounded-xl font-medium hover:bg-green-700 transition-colors">
+            + 記錄股息
+          </button>
+        </div>
+
+        <div v-if="!dividends.length" class="text-center py-16 text-gray-400">
+          <p class="text-5xl mb-3">🌱</p>
+          <p class="text-sm">還沒有股息記錄</p>
+          <p class="text-xs mt-1">收到股息時記錄下來，追蹤再投入進度</p>
+        </div>
+
+        <div class="space-y-2">
+          <div v-for="d in sortedDividends" :key="d.id"
+               class="bg-white rounded-2xl p-4 shadow-sm flex justify-between items-start">
+            <div>
+              <p class="font-semibold text-gray-800">{{ d.symbol }}</p>
+              <p class="text-xs text-gray-400 mt-0.5">{{ d.date }}</p>
+              <span v-if="d.reinvested"
+                    class="inline-block mt-1.5 text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">
+                ↻ 再投入 {{ d.sharesAdded }} 股
+              </span>
+              <span v-else
+                    class="inline-block mt-1.5 text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">
+                現金領取
+              </span>
+            </div>
+            <div class="text-right">
+              <p class="font-bold text-green-600">+{{ formatTWD(d.amount) }}</p>
+              <button @click="delDiv(d.id)" class="text-xs text-red-400 hover:text-red-600 mt-1">刪除</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ══════ 設定 ══════ -->
+      <div v-show="activeTab === 'settings'">
+        <div class="space-y-4">
+
+          <!-- 貸款進度 -->
+          <div class="bg-white rounded-2xl p-4 shadow-sm">
+            <p class="font-semibold text-gray-700 mb-3">貸款狀態</p>
+            <div class="space-y-2 text-sm">
+              <div class="flex justify-between py-1.5 border-b border-gray-50">
+                <span class="text-gray-500">貸款總額</span>
+                <span class="font-medium">NT$ 1,000,000</span>
+              </div>
+              <div class="flex justify-between py-1.5 border-b border-gray-50">
+                <span class="text-gray-500">剩餘本金</span>
+                <span class="font-medium text-red-500">{{ formatTWD(loanStats.remainingBalance) }}</span>
+              </div>
+              <div class="flex justify-between items-center py-1.5">
+                <span class="text-gray-500">目前第幾期</span>
+                <div class="flex items-center gap-2">
+                  <input type="number" v-model.number="loan.currentMonth" min="0" max="120"
+                         class="w-16 border border-gray-200 rounded-lg px-2 py-1 text-sm text-right focus:outline-none focus:ring-1 focus:ring-blue-400"
+                         @change="saveData" />
+                  <span class="text-gray-400">/ 120 期</span>
+                </div>
+              </div>
+            </div>
+            <div class="mt-3">
+              <div class="flex justify-between text-xs text-gray-400 mb-1">
+                <span>還款進度</span>
+                <span>{{ (loan.currentMonth / 120 * 100).toFixed(1) }}%</span>
+              </div>
+              <div class="w-full bg-gray-100 rounded-full h-2">
+                <div class="bg-blue-500 h-2 rounded-full transition-all"
+                     :style="{ width: Math.min(loan.currentMonth / 120 * 100, 100) + '%' }"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 利率記錄（浮動利率）-->
+          <div class="bg-white rounded-2xl p-4 shadow-sm">
+            <div class="flex items-start justify-between mb-2">
+              <div>
+                <p class="font-semibold text-gray-700">利率記錄</p>
+                <p class="text-xs text-gray-400 mt-0.5">利率調整時新增一筆，系統自動重算利息</p>
+              </div>
+              <button @click="addRateEntry"
+                      class="text-xs text-blue-600 border border-blue-200 rounded-xl px-3 py-1.5 hover:bg-blue-50 flex-shrink-0">
+                + 新增
+              </button>
+            </div>
+            <div class="space-y-2 mt-3">
+              <div v-for="(entry, idx) in loan.rateHistory" :key="idx"
+                   class="bg-gray-50 rounded-xl p-3">
+                <div class="grid grid-cols-3 gap-2 text-xs">
+                  <div>
+                    <p class="text-gray-400 mb-1">起始期數</p>
+                    <input type="number" v-model.number="entry.fromMonth" min="1" max="120"
+                           class="w-full border border-gray-200 rounded-lg px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white"
+                           @change="saveData" />
+                  </div>
+                  <div>
+                    <p class="text-gray-400 mb-1">年利率（%）</p>
+                    <input type="number" v-model.number="entry.annualRatePct" min="0" step="0.01"
+                           class="w-full border border-gray-200 rounded-lg px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white"
+                           @change="syncRateEntry(entry); saveData()" />
+                  </div>
+                  <div>
+                    <p class="text-gray-400 mb-1">每月還款</p>
+                    <input type="number" v-model.number="entry.monthlyPayment" min="0"
+                           class="w-full border border-gray-200 rounded-lg px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white"
+                           @change="saveData" />
+                  </div>
+                </div>
+                <div class="flex justify-between items-center mt-2">
+                  <p class="text-xs text-gray-400">
+                    {{ idx === 0 ? '初始設定' : `第 ${entry.fromMonth} 期起生效` }}
+                  </p>
+                  <button v-if="loan.rateHistory.length > 1" @click="removeRateEntry(idx)"
+                          class="text-xs text-red-400 hover:text-red-600">移除</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 美元匯率 -->
+          <div class="bg-white rounded-2xl p-4 shadow-sm">
+            <p class="font-semibold text-gray-700 mb-3">美元匯率</p>
+            <div class="flex justify-between items-center text-sm">
+              <span class="text-gray-500">1 USD =</span>
+              <div class="flex items-center gap-2">
+                <input type="number" v-model.number="settings.usdTwdRate" step="0.01" min="1"
+                       class="w-24 border border-gray-200 rounded-lg px-2 py-1 text-sm text-right focus:outline-none focus:ring-1 focus:ring-blue-400"
+                       @change="saveData" />
+                <span class="text-gray-400">TWD</span>
+              </div>
+            </div>
+            <p class="text-xs text-gray-400 mt-2">美股市值換算台幣時使用，請定期手動更新</p>
+          </div>
+
+          <!-- 投入計劃 -->
+          <div class="bg-white rounded-2xl p-4 shadow-sm">
+            <p class="font-semibold text-gray-700 mb-3">投入計劃設定</p>
+            <div class="flex justify-between items-center text-sm">
+              <span class="text-gray-500">計劃總投入金額</span>
+              <div class="flex items-center gap-1">
+                <span class="text-gray-400 text-xs">NT$</span>
+                <input type="number" v-model.number="settings.totalPlanned" step="10000" min="0"
+                       class="w-28 border border-gray-200 rounded-lg px-2 py-1 text-sm text-right focus:outline-none focus:ring-1 focus:ring-blue-400"
+                       @change="saveData" />
+              </div>
+            </div>
+          </div>
+
+          <!-- 再平衡閾值 -->
+          <div class="bg-white rounded-2xl p-4 shadow-sm">
+            <p class="font-semibold text-gray-700 mb-1">再平衡警示閾值</p>
+            <p class="text-xs text-gray-400 mb-3">偏離目標比例超過此數值時，儀表板顯示警示</p>
+            <div class="flex justify-between items-center text-sm">
+              <span class="text-gray-500">觸發偏差</span>
+              <div class="flex items-center gap-2">
+                <input type="number" v-model.number="settings.rebalanceThreshold" min="1" max="30"
+                       class="w-16 border border-gray-200 rounded-lg px-2 py-1 text-sm text-right focus:outline-none focus:ring-1 focus:ring-blue-400"
+                       @change="saveData" />
+                <span class="text-gray-400">%</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- 持倉代號 -->
+          <div class="bg-white rounded-2xl p-4 shadow-sm">
+            <p class="font-semibold text-gray-700 mb-1">持倉代號</p>
+            <p class="text-xs text-gray-400 mb-3">可修改美股 ETF 的代號與名稱</p>
+            <div class="space-y-2">
+              <div v-for="h in holdings" :key="h.id" class="flex items-center gap-2 text-sm">
+                <span class="w-2.5 h-2.5 rounded-full flex-shrink-0" :style="{ background: h.color }"></span>
+                <input type="text" v-model="h.symbol"
+                       class="w-20 border border-gray-200 rounded-lg px-2 py-1 text-sm uppercase focus:outline-none focus:ring-1 focus:ring-blue-400"
+                       @change="saveData" />
+                <input type="text" v-model="h.name"
+                       class="flex-1 border border-gray-200 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
+                       @change="saveData" />
+                <span class="text-xs text-gray-400 w-8 text-right">{{ h.targetPct }}%</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- 帳號資訊 -->
+          <div class="bg-white rounded-2xl p-4 shadow-sm">
+            <p class="font-semibold text-gray-700 mb-3">帳號資訊</p>
+            <div class="flex justify-between text-sm py-1">
+              <span class="text-gray-500">家庭代碼</span>
+              <span class="font-mono font-medium text-gray-800">{{ familyCode }}</span>
+            </div>
+            <button @click="doDisconnect"
+                    class="mt-3 w-full text-xs text-gray-500 border border-gray-200 rounded-xl py-2 hover:bg-gray-50 transition-colors">
+              切換帳號（重新連線）
+            </button>
+          </div>
+
+          <!-- 危險區域 -->
+          <div class="bg-white rounded-2xl p-4 shadow-sm">
+            <p class="font-semibold text-gray-700 mb-2">危險區域</p>
+            <p class="text-xs text-gray-400 mb-3">清除後資料會從雲端刪除，兩個裝置都會清空</p>
+            <button @click="doClear"
+                    class="w-full text-sm text-red-500 border border-red-200 rounded-xl py-2 hover:bg-red-50 transition-colors">
+              清除所有資料
+            </button>
+          </div>
+
+        </div>
+      </div>
+    </main>
+
+    <!-- Bottom Nav -->
+    <nav class="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-100 z-20">
+      <div class="max-w-xl mx-auto grid grid-cols-4">
+        <button v-for="tab in tabs" :key="tab.id" @click="switchTab(tab.id)"
+                class="py-3 flex flex-col items-center gap-0.5 relative transition-colors"
+                :class="activeTab === tab.id ? 'text-blue-600' : 'text-gray-400'">
+          <span class="text-xl leading-none">{{ tab.icon }}</span>
+          <span class="text-xs">{{ tab.label }}</span>
+          <span v-if="tab.id === 'dashboard' && rebalanceAlerts.length > 0 && totalValue > 0"
+                class="absolute top-2 right-6 w-2 h-2 bg-orange-500 rounded-full"></span>
+        </button>
+      </div>
+    </nav>
+
+    <!-- Modal: 新增交易 -->
+    <transition name="modal">
+      <div v-if="showTx" class="fixed inset-0 z-50 flex items-end">
+        <div class="absolute inset-0 bg-black/40" @click="showTx = false"></div>
+        <div class="sheet relative bg-white rounded-t-3xl w-full max-w-xl mx-auto p-5 pb-8">
+          <div class="w-10 h-1 bg-gray-200 rounded-full mx-auto mb-4"></div>
+          <h3 class="font-bold text-gray-800 mb-4">新增交易</h3>
+          <div class="space-y-3">
+            <div>
+              <label class="text-xs text-gray-500 block mb-1">股票</label>
+              <select v-model="newTx.symbol"
+                      class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400">
+                <option v-for="h in holdings" :key="h.id" :value="h.symbol">{{ h.symbol }} — {{ h.name }}</option>
+              </select>
+            </div>
+            <div>
+              <label class="text-xs text-gray-500 block mb-1">操作</label>
+              <div class="flex gap-2">
+                <button @click="newTx.type = 'buy'" class="flex-1 py-2 rounded-xl text-sm font-medium transition-colors"
+                        :class="newTx.type === 'buy' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600'">
+                  買入
+                </button>
+                <button @click="newTx.type = 'sell'" class="flex-1 py-2 rounded-xl text-sm font-medium transition-colors"
+                        :class="newTx.type === 'sell' ? 'bg-red-500 text-white' : 'bg-gray-100 text-gray-600'">
+                  賣出
+                </button>
+              </div>
+            </div>
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <label class="text-xs text-gray-500 block mb-1">股數</label>
+                <input type="number" v-model.number="newTx.shares" min="0" step="1"
+                       class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400" />
+              </div>
+              <div>
+                <label class="text-xs text-gray-500 block mb-1">成交價（{{ txMarket === 'US' ? 'USD' : 'NT$' }}）</label>
+                <input type="number" v-model.number="newTx.price" min="0" step="0.01"
+                       class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400" />
+              </div>
+            </div>
+            <div>
+              <label class="text-xs text-gray-500 block mb-1">日期</label>
+              <input type="date" v-model="newTx.date"
+                     class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400" />
+            </div>
+            <div v-if="newTx.shares > 0 && newTx.price > 0"
+                 class="bg-gray-50 rounded-xl p-3 text-sm text-gray-600">
+              預估金額：<strong class="text-gray-800">{{ formatTWD(txEstimate) }}</strong>
+              <span v-if="txMarket === 'US'" class="text-xs text-gray-400 ml-1">
+                （USD ${{ (newTx.shares * newTx.price).toFixed(2) }}）
+              </span>
+            </div>
+          </div>
+          <div class="flex gap-3 mt-4">
+            <button @click="showTx = false" class="flex-1 py-3 border border-gray-200 rounded-2xl text-sm text-gray-600">
+              取消
+            </button>
+            <button @click="commitTx" class="flex-1 py-3 bg-blue-600 text-white rounded-2xl text-sm font-medium">
+              確認{{ newTx.type === 'buy' ? '買入' : '賣出' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </transition>
+
+    <!-- Modal: 記錄股息 -->
+    <transition name="modal">
+      <div v-if="showDivModal" class="fixed inset-0 z-50 flex items-end">
+        <div class="absolute inset-0 bg-black/40" @click="showDivModal = false"></div>
+        <div class="sheet relative bg-white rounded-t-3xl w-full max-w-xl mx-auto p-5 pb-8">
+          <div class="w-10 h-1 bg-gray-200 rounded-full mx-auto mb-4"></div>
+          <h3 class="font-bold text-gray-800 mb-4">記錄股息</h3>
+          <div class="space-y-3">
+            <div>
+              <label class="text-xs text-gray-500 block mb-1">股票</label>
+              <select v-model="newDiv.symbol"
+                      class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400">
+                <option v-for="h in holdings" :key="h.id" :value="h.symbol">{{ h.symbol }} — {{ h.name }}</option>
+              </select>
+            </div>
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <label class="text-xs text-gray-500 block mb-1">金額（台幣）</label>
+                <input type="number" v-model.number="newDiv.amount" min="0"
+                       class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400" />
+              </div>
+              <div>
+                <label class="text-xs text-gray-500 block mb-1">日期</label>
+                <input type="date" v-model="newDiv.date"
+                       class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400" />
+              </div>
+            </div>
+            <label class="flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" v-model="newDiv.reinvested" class="w-4 h-4 accent-blue-600" />
+              <span class="text-sm text-gray-700">已再投入（用股息買入股票）</span>
+            </label>
+            <div v-if="newDiv.reinvested">
+              <label class="text-xs text-gray-500 block mb-1">再投入股數</label>
+              <input type="number" v-model.number="newDiv.sharesAdded" min="0" step="0.001"
+                     class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400" />
+            </div>
+          </div>
+          <div class="flex gap-3 mt-4">
+            <button @click="showDivModal = false" class="flex-1 py-3 border border-gray-200 rounded-2xl text-sm text-gray-600">
+              取消
+            </button>
+            <button @click="commitDiv" class="flex-1 py-3 bg-green-600 text-white rounded-2xl text-sm font-medium">
+              確認記錄
+            </button>
+          </div>
+        </div>
+      </div>
+    </transition>
+
+  </template>
+</div>
+
+<script>
+const { createApp, ref, reactive, computed, nextTick, onMounted } = Vue
+const COLORS = ['#3B82F6', '#10B981', '#F59E0B']
+const LOAN_TOTAL = 1_000_000
+
+createApp({
+  setup() {
+
+    // ─── Firebase / setup ─────────────────────────────────
+    const isConnected  = ref(false)
+    const setupStep    = ref(1)
+    const fbCfg        = reactive({ apiKey: '', authDomain: '', databaseURL: '', projectId: '' })
+    const inputCode    = ref('')
+    const familyCode   = ref('')
+    const isConnecting = ref(false)
+    const connectErr   = ref('')
+    const syncStatus   = ref('synced')
+    let   dbRef        = null
+
+    // ─── App state ────────────────────────────────────────
+    const activeTab = ref('dashboard')
+    const tabs = [
+      { id: 'dashboard', icon: '📊', label: '總覽' },
+      { id: 'holdings',  icon: '📈', label: '持倉' },
+      { id: 'dividends', icon: '💰', label: '股息' },
+      { id: 'settings',  icon: '⚙️', label: '設定' }
+    ]
+
+    const loan = reactive({
+      currentMonth: 1,
+      rateHistory: [{ fromMonth: 1, annualRatePct: 2.52, annualRate: 0.0252, monthlyPayment: 9436 }]
+    })
+
+    const settings = reactive({
+      usdTwdRate: 32.5,
+      rebalanceThreshold: 5,
+      totalPlanned: 880000
+    })
+
+    const holdings = reactive([
+      { id: 1, symbol: '0050', name: '元大台灣50', market: 'TW', shares: 0, avgCost: 0, currentPrice: 0, targetPct: 45, color: COLORS[0] },
+      { id: 2, symbol: 'VOO',  name: '美股ETF',    market: 'US', shares: 0, avgCost: 0, currentPrice: 0, targetPct: 45, color: COLORS[1] },
+      { id: 3, symbol: 'TSLA', name: 'Tesla',      market: 'US', shares: 0, avgCost: 0, currentPrice: 0, targetPct: 10, color: COLORS[2] }
+    ])
+
+    const dividends = ref([])
+
+    // Modals
+    const showTx      = ref(false)
+    const showDivModal = ref(false)
+    const newTx  = reactive({ symbol: '0050', type: 'buy', shares: 0, price: 0, date: todayStr() })
+    const newDiv = reactive({ symbol: '0050', amount: 0, date: todayStr(), reinvested: false, sharesAdded: 0 })
+
+    // Price fetch
+    const isFetchingPrices = ref(false)
+    const priceError       = ref('')
+    const priceUpdatedAt   = ref('')
+
+    let chartInstance = null
+
+    // ─── Helpers ──────────────────────────────────────────
+    function todayStr() {
+      return new Date().toISOString().slice(0, 10)
+    }
+
+    function formatTWD(val) {
+      const abs = Math.abs(val)
+      let s
+      if      (abs >= 1e8)    s = (abs / 1e8).toFixed(2) + ' 億'
+      else if (abs >= 1e4)    s = (abs / 1e4).toFixed(2) + ' 萬'
+      else                    s = Math.round(abs).toLocaleString()
+      return (val < 0 ? '-' : '') + 'NT$ ' + s
+    }
+
+    function holdingValue(h) {
+      return h.shares * (h.market === 'US' ? h.currentPrice * settings.usdTwdRate : h.currentPrice)
+    }
+    function holdingCost(h) {
+      return h.shares * (h.market === 'US' ? h.avgCost * settings.usdTwdRate : h.avgCost)
+    }
+    function holdingReturn(h)    { return holdingValue(h) - holdingCost(h) }
+    function holdingReturnPct(h) {
+      const c = holdingCost(h); return c > 0 ? holdingReturn(h) / c * 100 : 0
+    }
+    function holdingPct(h) {
+      return totalValue.value > 0 ? holdingValue(h) / totalValue.value * 100 : 0
+    }
+
+    function getRateEntry(month) {
+      const sorted = [...loan.rateHistory].sort((a, b) => b.fromMonth - a.fromMonth)
+      return sorted.find(e => e.fromMonth <= month) || loan.rateHistory[0]
+    }
+
+    // ─── Computed ─────────────────────────────────────────
+    const totalValue = computed(() => holdings.reduce((s, h) => s + holdingValue(h), 0))
+    const totalCost  = computed(() => holdings.reduce((s, h) => s + holdingCost(h),  0))
+    const totalUnrealizedReturn = computed(() => totalValue.value - totalCost.value)
+    const totalReturnPct = computed(() =>
+      totalCost.value > 0 ? totalUnrealizedReturn.value / totalCost.value * 100 : 0
+    )
+    const totalDividends = computed(() => dividends.value.reduce((s, d) => s + d.amount, 0))
+    const totalActualInvested = computed(() => totalCost.value)
+
+    const enrichedHoldings = computed(() =>
+      holdings.map(h => ({ ...h, value: holdingValue(h), pct: holdingPct(h) }))
+    )
+
+    const rebalanceAlerts = computed(() =>
+      enrichedHoldings.value
+        .filter(h => Math.abs(h.pct - h.targetPct) > settings.rebalanceThreshold)
+        .map(h => ({
+          ...h,
+          diff: h.pct - h.targetPct,
+          adjustAmount: (h.targetPct / 100 * totalValue.value) - h.value
+        }))
+    )
+
+    const loanStats = computed(() => {
+      let balance = LOAN_TOTAL, interest = 0
+      const n = Math.min(Math.max(0, loan.currentMonth), 120)
+      for (let i = 0; i < n; i++) {
+        const e    = getRateEntry(i + 1)
+        const int  = balance * (e.annualRate / 12)
+        balance   -= (e.monthlyPayment - int)
+        interest  += int
+      }
+      return { totalInterestPaid: Math.max(0, interest), remainingBalance: Math.max(0, balance) }
+    })
+
+    const currentRate = computed(() => getRateEntry(loan.currentMonth || 1).annualRate)
+
+    const netReturn = computed(() =>
+      totalUnrealizedReturn.value + totalDividends.value - loanStats.value.totalInterestPaid
+    )
+
+    const annualizedReturn = computed(() => {
+      if (totalCost.value <= 0 || loan.currentMonth <= 0) return 0
+      const r = (totalUnrealizedReturn.value + totalDividends.value) / totalCost.value
+      const y = loan.currentMonth / 12
+      return y > 0 ? (Math.pow(1 + r, 1 / y) - 1) * 100 : 0
+    })
+
+    const sortedDividends = computed(() =>
+      [...dividends.value].sort((a, b) => new Date(b.date) - new Date(a.date))
+    )
+
+    const investmentPlan = computed(() =>
+      holdings.map(h => {
+        const planned  = settings.totalPlanned * h.targetPct / 100
+        const actual   = holdingCost(h)
+        const remaining = Math.max(0, planned - actual)
+        const planPct  = planned > 0 ? Math.min(actual / planned * 100, 100) : 0
+        return { ...h, planned, actual, remaining, planPct }
+      })
+    )
+
+    const txMarket   = computed(() => holdings.find(h => h.symbol === newTx.symbol)?.market ?? 'TW')
+    const txEstimate = computed(() => {
+      const h = holdings.find(h => h.symbol === newTx.symbol)
+      if (!h) return 0
+      return h.market === 'US'
+        ? newTx.shares * newTx.price * settings.usdTwdRate
+        : newTx.shares * newTx.price
+    })
+
+    // ─── Firebase ─────────────────────────────────────────
+    function goStep2() {
+      if (!fbCfg.apiKey || !fbCfg.databaseURL) return
+      setupStep.value = 2
+    }
+
+    async function doConnect() {
+      if (!inputCode.value.trim()) return
+      isConnecting.value = true
+      connectErr.value = ''
+      try {
+        const config = {
+          apiKey:      fbCfg.apiKey,
+          authDomain:  fbCfg.authDomain || fbCfg.projectId + '.firebaseapp.com',
+          databaseURL: fbCfg.databaseURL,
+          projectId:   fbCfg.projectId
+        }
+        if (firebase.apps.length) await firebase.app().delete()
+        firebase.initializeApp(config)
+        familyCode.value = inputCode.value.trim()
+        localStorage.setItem('fb-cfg',  JSON.stringify(config))
+        localStorage.setItem('fb-code', familyCode.value)
+        await startListening()
+        isConnected.value = true
+        nextTick(() => { initChart(); updateChart() })
+      } catch (e) {
+        connectErr.value = '連線失敗：' + e.message
+      } finally {
+        isConnecting.value = false
+      }
+    }
+
+    function startListening() {
+      return new Promise(resolve => {
+        let done = false
+        if (dbRef) dbRef.off()
+        dbRef = firebase.database().ref('stock-data/' + familyCode.value)
+        dbRef.on('value', snap => {
+          const data = snap.val()
+          if (data) applyData(data)
+          syncStatus.value = 'synced'
+          if (!done) { done = true; resolve() }
+        }, () => {
+          syncStatus.value = 'offline'
+          if (!done) { done = true; resolve() }
+        })
+      })
+    }
+
+    async function saveData() {
+      if (!isConnected.value || !familyCode.value) return
+      syncStatus.value = 'syncing'
+      try {
+        await firebase.database().ref('stock-data/' + familyCode.value).set(collectData())
+        syncStatus.value = 'synced'
+      } catch { syncStatus.value = 'offline' }
+    }
+
+    function collectData() {
+      return {
+        loan:     { currentMonth: loan.currentMonth, rateHistory: loan.rateHistory.map(e => ({ ...e })) },
+        settings: { ...settings },
+        holdings: holdings.map(h => ({ ...h })),
+        dividends: dividends.value
+      }
+    }
+
+    function applyData(data) {
+      if (data.loan) {
+        loan.currentMonth = data.loan.currentMonth ?? loan.currentMonth
+        if (data.loan.rateHistory?.length) {
+          loan.rateHistory.splice(0, loan.rateHistory.length, ...data.loan.rateHistory)
+        }
+      }
+      if (data.settings) Object.assign(settings, data.settings)
+      if (data.holdings) {
+        data.holdings.forEach((h, i) => {
+          if (holdings[i]) { Object.assign(holdings[i], h); holdings[i].color = COLORS[i] }
+        })
+      }
+      if (data.dividends) dividends.value = data.dividends
+      nextTick(updateChart)
+    }
+
+    function doDisconnect() {
+      if (!confirm('確定要切換帳號嗎？')) return
+      if (dbRef) { dbRef.off(); dbRef = null }
+      localStorage.removeItem('fb-cfg')
+      localStorage.removeItem('fb-code')
+      isConnected.value = false
+      setupStep.value = 1
+    }
+
+    async function doClear() {
+      if (!confirm('確定要清除所有資料嗎？兩個裝置都會清空，此操作無法復原。')) return
+      holdings.forEach(h => { h.shares = 0; h.avgCost = 0; h.currentPrice = 0 })
+      dividends.value = []
+      loan.currentMonth = 1
+      loan.rateHistory = [{ fromMonth: 1, annualRatePct: 2.52, annualRate: 0.0252, monthlyPayment: 9436 }]
+      await saveData()
+      updateChart()
+    }
+
+    // ─── Price fetch ──────────────────────────────────────
+    async function fetchPrices() {
+      isFetchingPrices.value = true
+      priceError.value = ''
+      const errs = []
+
+      // 台股：TWSE
+      for (const h of holdings.filter(h => h.market === 'TW')) {
+        try {
+          const url = `https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch=tse_${h.symbol}.tw&json=1&delay=0`
+          const res  = await fetch(url)
+          const json = await res.json()
+          const info = json.msgArray?.[0]
+          if (info) {
+            const p = parseFloat(info.z !== '-' ? info.z : info.y)
+            if (!isNaN(p) && p > 0) h.currentPrice = p
+          }
+        } catch { errs.push(h.symbol + ' 抓取失敗') }
+      }
+
+      // 美股：Yahoo Finance
+      const usHoldings = holdings.filter(h => h.market === 'US')
+      if (usHoldings.length) {
+        try {
+          const syms = usHoldings.map(h => h.symbol).join(',')
+          const url  = `https://query1.finance.yahoo.com/v8/finance/quote?symbols=${syms}&fields=regularMarketPrice`
+          const res  = await fetch(url)
+          const json = await res.json()
+          ;(json.quoteResponse?.result || []).forEach(q => {
+            const h = holdings.find(h => h.symbol.toUpperCase() === q.symbol.toUpperCase())
+            if (h && q.regularMarketPrice) h.currentPrice = q.regularMarketPrice
+          })
+        } catch {
+          errs.push('美股因 CORS 限制無法自動抓取，請手動輸入')
+        }
+      }
+
+      if (errs.length) priceError.value = errs.join('；')
+      priceUpdatedAt.value = new Date().toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' })
+      await saveData()
+      updateChart()
+      isFetchingPrices.value = false
+    }
+
+    // ─── Rate history ─────────────────────────────────────
+    function addRateEntry() {
+      const last = loan.rateHistory[loan.rateHistory.length - 1]
+      loan.rateHistory.push({
+        fromMonth: loan.currentMonth + 1,
+        annualRatePct: last.annualRatePct,
+        annualRate: last.annualRate,
+        monthlyPayment: last.monthlyPayment
+      })
+    }
+    function removeRateEntry(idx) {
+      if (loan.rateHistory.length <= 1) return
+      loan.rateHistory.splice(idx, 1)
+      saveData()
+    }
+    function syncRateEntry(entry) { entry.annualRate = entry.annualRatePct / 100 }
+
+    // ─── Transactions ─────────────────────────────────────
+    function openTx(symbol) {
+      Object.assign(newTx, { symbol, type: 'buy', shares: 0, price: 0, date: todayStr() })
+      showTx.value = true
+    }
+    async function commitTx() {
+      const { symbol, type, shares, price } = newTx
+      if (!shares || shares <= 0 || !price || price <= 0) return
+      const h = holdings.find(h => h.symbol === symbol)
+      if (!h) return
+      if (type === 'buy') {
+        const prev = h.shares * h.avgCost
+        h.shares  += shares
+        h.avgCost  = (prev + shares * price) / h.shares
+        if (!h.currentPrice) h.currentPrice = price
+      } else {
+        h.shares = Math.max(0, h.shares - shares)
+      }
+      showTx.value = false
+      await saveData()
+      updateChart()
+    }
+
+    // ─── Dividends ────────────────────────────────────────
+    function openDiv() {
+      Object.assign(newDiv, { symbol: '0050', amount: 0, date: todayStr(), reinvested: false, sharesAdded: 0 })
+      showDivModal.value = true
+    }
+    async function commitDiv() {
+      const { symbol, amount, date, reinvested, sharesAdded } = newDiv
+      if (!amount || amount <= 0 || !date) return
+      if (reinvested && sharesAdded > 0) {
+        const h = holdings.find(h => h.symbol === symbol)
+        if (h) {
+          const pps  = amount / sharesAdded
+          const prev = h.shares * h.avgCost
+          h.shares  += sharesAdded
+          h.avgCost  = (prev + sharesAdded * pps) / h.shares
+        }
+      }
+      dividends.value.push({ id: Date.now(), symbol, amount, date, reinvested, sharesAdded: reinvested ? sharesAdded : 0 })
+      showDivModal.value = false
+      await saveData()
+    }
+    async function delDiv(id) {
+      dividends.value = dividends.value.filter(d => d.id !== id)
+      await saveData()
+    }
+
+    // ─── UI ───────────────────────────────────────────────
+    function switchTab(id) {
+      activeTab.value = id
+      if (id === 'dashboard') nextTick(updateChart)
+    }
+    async function onPriceChange() { await saveData(); updateChart() }
+
+    // ─── Chart ────────────────────────────────────────────
+    function initChart() {
+      const el = document.getElementById('pieChart')
+      if (!el || chartInstance) return
+      chartInstance = new Chart(el, {
+        type: 'doughnut',
+        data: {
+          labels: holdings.map(h => h.symbol),
+          datasets: [{ data: [45, 45, 10], backgroundColor: COLORS, borderWidth: 2, borderColor: '#fff' }]
+        },
+        options: {
+          plugins: { legend: { display: false }, tooltip: { enabled: false } },
+          cutout: '68%',
+          animation: { duration: 300 }
+        }
+      })
+    }
+    function updateChart() {
+      if (!chartInstance) { initChart(); return }
+      const vals = holdings.map(h => holdingValue(h))
+      chartInstance.data.datasets[0].data = vals.some(v => v > 0) ? vals : [45, 45, 10]
+      chartInstance.update()
+    }
+
+    // ─── Lifecycle ────────────────────────────────────────
+    onMounted(async () => {
+      const savedCfg  = localStorage.getItem('fb-cfg')
+      const savedCode = localStorage.getItem('fb-code')
+      if (!savedCfg || !savedCode) return
+      try {
+        const config = JSON.parse(savedCfg)
+        Object.assign(fbCfg, config)
+        inputCode.value = savedCode
+        if (firebase.apps.length) await firebase.app().delete()
+        firebase.initializeApp(config)
+        familyCode.value = savedCode
+        await startListening()
+        isConnected.value = true
+        nextTick(() => { initChart(); updateChart() })
+      } catch {
+        localStorage.removeItem('fb-cfg')
+        localStorage.removeItem('fb-code')
+      }
+    })
+
+    return {
+      isConnected, setupStep, fbCfg, inputCode, isConnecting, connectErr, syncStatus,
+      activeTab, tabs, loan, settings, holdings, dividends,
+      showTx, showDivModal, newTx, newDiv, isFetchingPrices, priceError, priceUpdatedAt,
+      totalValue, totalCost, totalUnrealizedReturn, totalReturnPct,
+      totalDividends, totalActualInvested, enrichedHoldings, rebalanceAlerts,
+      loanStats, currentRate, netReturn, annualizedReturn, sortedDividends,
+      investmentPlan, txMarket, txEstimate,
+      formatTWD, holdingValue, holdingReturn, holdingReturnPct, holdingPct,
+      goStep2, doConnect, doDisconnect, doClear,
+      fetchPrices, addRateEntry, removeRateEntry, syncRateEntry,
+      openTx, commitTx, openDiv, commitDiv, delDiv,
+      switchTab, onPriceChange, saveData
+    }
+  }
+}).mount('#app')
+</script>
+</body>
+</html>
